@@ -1,0 +1,9 @@
+springdoc:
+  packages-to-scan: com.pointmall.core.controller
+  default-consumes-media-type: application/json
+  default-produce-media-type: application/json
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha # 알파벳 순서로 정렬
+    operations-sorter: alpha
+    display-request-duration: true # 응답 시간 표시

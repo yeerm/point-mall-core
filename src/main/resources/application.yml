@@ -1,0 +1,4 @@
+spring:
+  profiles:
+    include: db, swagger
+  # 활성화 파일
