@@ -30,7 +30,7 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private Long pointBalance = 0L;
 
-    @Builder // 클래스 위가 아닌 생성자 위에 붙이는 것이 더 안전합니다.
+    @Builder
     private User(String name, String email, long pointBalance) {
         this.name = name;
         this.email = email;
@@ -40,7 +40,7 @@ public class User extends BaseEntity {
 
     public void usePoint(Long point) {
         Long currentPoint = this.pointBalance - point;
-        if(point > 0) {
+        if(currentPoint > 0) {
             this.pointBalance = currentPoint;
         }else {
             throw new IllegalArgumentException("포인트가 부족합니다.");

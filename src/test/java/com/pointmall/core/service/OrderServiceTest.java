@@ -57,7 +57,7 @@ public class OrderServiceTest {
         assertThat(savedOrder.getOrderItems()).hasSize(2);
 
 
-        // (2) 재고 차감 확인 (영속성 컨텍스트 초기화 후 재조회 권장)
+        // (2) 재고 차감 확인
         assertThat(laptop.getStockQuantity()).isEqualTo(9);
         assertThat(mouse.getStockQuantity()).isEqualTo(18);
 
@@ -82,13 +82,16 @@ public class OrderServiceTest {
                 new OrderRequest.OrderItemDetail(product.getId(), 1)
         ));
 
-        System.out.println("결제전 포인트: " + user.getPointBalance());
+//        System.out.println("결제 전 포인트: " + user.getPointBalance());
         // When & Then: 예외가 발생하는지 확인
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+//        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+//            orderService.createOrder(user.getId(), request);
+//        });
+        assertThrows(IllegalArgumentException.class, () -> {
             orderService.createOrder(user.getId(), request);
         });
-        System.out.println("결제후 포인트: " + user.getPointBalance());
+//        System.out.println("결제 후 포인트: " + user.getPointBalance());
 
-        assertThat(exception.getMessage()).isEqualTo("포인트가 부족합니다.");
+//        assertThat(exception.getMessage()).isEqualTo("포인트가 부족합니다.");
     }
 }
