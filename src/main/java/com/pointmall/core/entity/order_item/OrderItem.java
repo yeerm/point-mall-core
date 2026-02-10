@@ -36,7 +36,17 @@ public class OrderItem extends BaseTimeEntity {
 
     private Long lineAmount;
 
-    protected void setOrder(Order order) {
+    public void setOrder(Order order) {
         this.order = order;
+    }
+
+    public static OrderItem createOrderItem(Product product, Long quantity) {
+        OrderItem orderItem = new OrderItem();
+        orderItem.product = product;
+        orderItem.productName = product.getName();
+        orderItem.unitPrice = product.getPrice();
+        orderItem.quantity = quantity;
+        orderItem.lineAmount = quantity * orderItem.unitPrice;
+        return orderItem;
     }
 }

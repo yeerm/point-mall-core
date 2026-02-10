@@ -34,5 +34,13 @@ public class PointHistory extends BaseTimeEntity {
 
 //    private Long refId;
 
-
+    public static PointHistory createHistory(User user, String type, Long amount, Long balaceAfter, String reason) {
+        PointHistory pointHistory = new PointHistory();
+        pointHistory.user = user;
+        pointHistory.type = Type.valueOf(type);
+        pointHistory.amount = amount;
+        pointHistory.balanceAfter = balaceAfter;
+        pointHistory.reason = reason;
+        return  pointHistory;
+    }
 }

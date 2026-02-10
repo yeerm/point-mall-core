@@ -42,4 +42,24 @@ public class Order extends BaseTimeEntity {
 
     private LocalDateTime cancelledAt;
 
+    // 주문 생성 정적 팩토리 메서드 예시
+    public static Order createOrder(User user, String orderNo, List<OrderItem> items) {
+        Order order = new Order();
+        order.user = user;
+        order.orderNo = orderNo;
+        long total = 0;
+        for (OrderItem item : items) {
+            order.addOrderItem(item);
+            total += item.getLineAmount();
+        }
+        order.totalAmount = total;
+        order.status = Status.CREATED;
+        return order;
+    }
+
+    public void addOrderItem(OrderItem item) {
+        this.orderItems.add(item);
+        item.setOrder(this);
+    }
+
 }
