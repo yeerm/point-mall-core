@@ -49,7 +49,7 @@ public class Product extends BaseEntity {
 
     public void removeStock(int quantity) {
         int currentStock = this.stockQuantity - quantity;
-        if(currentStock > 0) {
+        if(currentStock >= 0) {
             this.stockQuantity = currentStock;
         }else {
             throw new IllegalArgumentException("재고가 부족합니다.");

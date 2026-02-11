@@ -5,24 +5,30 @@ import com.pointmall.core.entity.order.Order;
 import com.pointmall.core.entity.point_history.PointHistory;
 import com.pointmall.core.entity.product.Product;
 import com.pointmall.core.entity.user.User;
-import com.pointmall.core.repository.OrderRepository;
-import com.pointmall.core.repository.PointHistoryRepository;
-import com.pointmall.core.repository.ProductRepository;
-import com.pointmall.core.repository.UserRepository;
+import com.pointmall.core.repository.*;
+import jakarta.persistence.EntityManager;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @SpringBootTest
-@Transactional
+//@Transactional
 public class OrderServiceTest {
+    Logger log = LoggerFactory.getLogger(OrderServiceTest.class);
     @Autowired
     OrderService orderService;
     @Autowired
@@ -33,10 +39,16 @@ public class OrderServiceTest {
     OrderRepository orderRepository;
     @Autowired
     PointHistoryRepository pointHistoryRepository;
+    @Autowired
+    OrderItemRepository orderItemRepository;
+    @Autowired
+    EntityManager em;
+
 
     @Test
     @DisplayName("다중 상품 주문 시 재고와 포인트가 정확히 차감되어야 한다")
     void createOrder_success() {
+
         // 1. Given: 테스트 데이터 준비
         User user = userRepository.save(User.createUser("김철수", "chulsoo@test.com", 100000L)); // 10만 포인트 보유
 
@@ -82,16 +94,81 @@ public class OrderServiceTest {
                 new OrderRequest.OrderItemDetail(product.getId(), 1)
         ));
 
-//        System.out.println("결제 전 포인트: " + user.getPointBalance());
         // When & Then: 예외가 발생하는지 확인
-//        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-//            orderService.createOrder(user.getId(), request);
-//        });
+
         assertThrows(IllegalArgumentException.class, () -> {
             orderService.createOrder(user.getId(), request);
         });
-//        System.out.println("결제 후 포인트: " + user.getPointBalance());
 
-//        assertThat(exception.getMessage()).isEqualTo("포인트가 부족합니다.");
+    }
+
+    @Test
+    @DisplayName("100명이 동시에 남은 재고 1개를 주문하면 1명만 성공해야 한다")
+    void concurrency_order_success() throws InterruptedException {
+        // 1. Given: 재고가 1개인 상품 준비
+        int threadCount = 32;
+        int userCount = 100;
+
+        // 100명 사용자 생성
+        List<User> users = new ArrayList<>();
+        for (int i = 0; i < userCount; i++) {
+            users.add(User.createUser("user" + i, "user" + i + "@test.com", 100000L));
+        }
+        userRepository.saveAllAndFlush(users);
+
+        // 상품 설정
+        Product product = productRepository.saveAndFlush(Product.createProduct("한정판 상품", 10000L, 1));
+
+        // 멀티스레드
+        ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch latch = new CountDownLatch(userCount);
+
+        // 2. When: 100명이 동시에 주문 호출
+        for (int i = 0; i < userCount; i++) {
+            User user = users.get(i);
+            executorService.submit(() -> {
+                try{
+                    OrderRequest request = new OrderRequest(List.of(
+                            new OrderRequest.OrderItemDetail(product.getId(), 1)
+                    ));
+                    orderService.createOrder(user.getId(), request);
+                } catch (Exception e) {
+                    // 낙관적 락 충돌하면 여기서 예외 발생
+                    log.error("주문 실패: {}", e.getMessage());
+                } finally {
+                  latch.countDown();
+                }
+            });
+        }
+
+        latch.await();
+
+//        em.flush();
+//        em.clear();
+
+        // 3. Then: 결과 확인
+        Product updatedProduct = productRepository.findById(product.getId())
+                .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다."));
+        log.info("version: {}", updatedProduct.getVersion());
+
+        // 전체 주문 개수 확인
+        long orderCount = orderRepository.count();
+
+        log.info("상품 재고: {}", updatedProduct.getStockQuantity());
+        log.info("성공한 주문 개수: {}", orderCount);
+
+        // 상품 재고는 1개 -> 0개
+        assertThat(updatedProduct.getStockQuantity()).isEqualTo(0);
+        // 1명만 성공해야함
+        assertThat(orderCount).isEqualTo(1);
+    }
+
+    @AfterEach
+    void tearDown() {
+        orderItemRepository.deleteAllInBatch();
+        orderRepository.deleteAllInBatch();
+        pointHistoryRepository.deleteAllInBatch();
+        productRepository.deleteAllInBatch();
+        userRepository.deleteAllInBatch();
     }
 }

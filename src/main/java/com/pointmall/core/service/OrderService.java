@@ -33,6 +33,7 @@ public class OrderService {
     // 2. 검증 및 차감
     // 3. 이력 생성(PointHistory)
     // 4. 주문 생성(Order, OrderItem)
+    @Transactional
     public Long createOrder(Long userId, OrderRequest request) {
         // 사용자 조회
         User user = userRepository.findById(userId)
