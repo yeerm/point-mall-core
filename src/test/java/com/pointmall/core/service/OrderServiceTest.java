@@ -43,6 +43,8 @@ public class OrderServiceTest {
     OrderItemRepository orderItemRepository;
     @Autowired
     EntityManager em;
+    @Autowired
+    OrderFacade orderFacade;
 
 
     @Test
@@ -117,7 +119,7 @@ public class OrderServiceTest {
         userRepository.saveAllAndFlush(users);
 
         // 상품 설정
-        Product product = productRepository.saveAndFlush(Product.createProduct("한정판 상품", 10000L, 1));
+        Product product = productRepository.saveAndFlush(Product.createProduct("한정판 상품", 10000L, 10));
 
         // 멀티스레드
         ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
@@ -131,7 +133,8 @@ public class OrderServiceTest {
                     OrderRequest request = new OrderRequest(List.of(
                             new OrderRequest.OrderItemDetail(product.getId(), 1)
                     ));
-                    orderService.createOrder(user.getId(), request);
+//                    orderService.createOrder(user.getId(), request);
+                    orderFacade.createOrder(user.getId(), request);
                 } catch (Exception e) {
                     // 낙관적 락 충돌하면 여기서 예외 발생
                     log.error("주문 실패: {}", e.getMessage());
@@ -160,7 +163,7 @@ public class OrderServiceTest {
         // 상품 재고는 1개 -> 0개
         assertThat(updatedProduct.getStockQuantity()).isEqualTo(0);
         // 1명만 성공해야함
-        assertThat(orderCount).isEqualTo(1);
+        assertThat(orderCount).isEqualTo(10);
     }
 
     @AfterEach
