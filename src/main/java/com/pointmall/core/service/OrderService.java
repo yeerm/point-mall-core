@@ -10,6 +10,7 @@ import com.pointmall.core.repository.OrderRepository;
 import com.pointmall.core.repository.PointHistoryRepository;
 import com.pointmall.core.repository.ProductRepository;
 import com.pointmall.core.repository.UserRepository;
+import com.pointmall.core.entity.point_history.Type;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,41 +36,56 @@ public class OrderService {
     // 4. 주문 생성(Order, OrderItem)
     @Transactional
     public Long createOrder(Long userId, OrderRequest request) {
-        // 사용자 조회
+        // 1. 사용자 조회
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
-        // 주문 리스트 생성
-        List<OrderItem> orderItems = request.getItems().stream().map(
-                item -> {
-                    Product product = productRepository.findById(item.getProductId())
-                            .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다."));
+        List<OrderRequest.OrderItemDetail> itemRequests = request.getItems();
 
-                    // 재고차감
-                    product.removeStock(item.getQuantity());
+        // 2. 상품 정보 일괄 조회
+        List<Product> products = itemRequests.stream()
+                .map(req -> productRepository.findById(req.getProductId())
+                        .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다.: " + req.getProductId())))
+                .collect(Collectors.toList());
 
-                    return OrderItem.createOrderItem(product, (long)item.getQuantity());
-                }
-        ).collect(Collectors.toList());
+        // 3. 총 주문 금액 계산 및 재고 유효성 검증
+        long totalAmount = 0;
+        for (int i = 0; i < itemRequests.size(); i++) {
+            Product product = products.get(i);
+            int quantity = itemRequests.get(i).getQuantity();
+            if (product.getStockQuantity() < quantity) {
+                throw new IllegalArgumentException("재고가 부족합니다. 상품 ID: " + product.getId());
+            }
+            totalAmount += product.getPrice() * quantity;
+        }
 
-        // 총금액 계산
-        long totalAmount = orderItems.stream()
-                .mapToLong(OrderItem::getLineAmount)
-                .sum();
-
-        // 사용자 포인트 차감
+        // 4. 사용자 포인트 확인 및 차감
         user.usePoint(totalAmount);
 
-        // 주문생성
-        Order order = Order.createOrder(user, LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"))
-                + "-" + UUID.randomUUID().toString().substring(0, 4).toUpperCase(), orderItems);
+        // 5. 주문 항목 생성 및 실제 재고 차감
+        List<OrderItem> orderItems = new java.util.ArrayList<>();
+        for (int i = 0; i < itemRequests.size(); i++) {
+            Product product = products.get(i);
+            int quantity = itemRequests.get(i).getQuantity();
+            product.removeStock(quantity);
+            orderItems.add(OrderItem.createOrderItem(product, (long) quantity));
+        }
 
-        // 이력생성
-        PointHistory pointHistory = PointHistory.createHistory(user, "USED", totalAmount, user.getPointBalance(), "상품 " + orderItems.size() + "건 구매");
+        // 6. 주문 생성
+        Order order = Order.createOrder(user, generateOrderNumber(), orderItems);
+
+        // 7. 포인트 사용 이력 생성
+        PointHistory pointHistory = PointHistory.createHistory(user, Type.USED, totalAmount, user.getPointBalance(), "상품 " + orderItems.size() + "건 구매");
 
         orderRepository.save(order);
         pointHistoryRepository.save(pointHistory);
 
         return order.getId();
+    }
+
+    // 주문번호 생성
+    private String generateOrderNumber() {
+        return LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"))
+                + "-" + UUID.randomUUID().toString().substring(0, 4).toUpperCase();
     }
 }

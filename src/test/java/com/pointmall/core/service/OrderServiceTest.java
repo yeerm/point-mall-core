@@ -1,6 +1,7 @@
 package com.pointmall.core.service;
 
 import com.pointmall.core.dto.order.OrderRequest;
+import com.pointmall.core.dto.order.OrderResult;
 import com.pointmall.core.entity.order.Order;
 import com.pointmall.core.entity.point_history.PointHistory;
 import com.pointmall.core.entity.product.Product;
@@ -14,13 +15,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -110,6 +111,13 @@ public class OrderServiceTest {
         // 1. Given: 재고가 1개인 상품 준비
         int threadCount = 32;
         int userCount = 100;
+        int initialStock = 10;
+
+        // 통계 수집용 변수
+        AtomicInteger totalRetryCount = new AtomicInteger(0);
+        AtomicInteger outOfStockCount = new AtomicInteger(0);
+        AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger deadlockCount = new AtomicInteger(0);
 
         // 100명 사용자 생성
         List<User> users = new ArrayList<>();
@@ -119,7 +127,7 @@ public class OrderServiceTest {
         userRepository.saveAllAndFlush(users);
 
         // 상품 설정
-        Product product = productRepository.saveAndFlush(Product.createProduct("한정판 상품", 10000L, 10));
+        Product product = productRepository.saveAndFlush(Product.createProduct("한정판 상품", 10000L, initialStock));
 
         // 멀티스레드
         ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
@@ -133,8 +141,16 @@ public class OrderServiceTest {
                     OrderRequest request = new OrderRequest(List.of(
                             new OrderRequest.OrderItemDetail(product.getId(), 1)
                     ));
-//                    orderService.createOrder(user.getId(), request);
-                    orderFacade.createOrder(user.getId(), request);
+                    OrderResult orderResult = orderFacade.createOrder(user.getId(), request, deadlockCount);
+                    totalRetryCount.addAndGet(orderResult.getRetryCount());
+                    successCount.incrementAndGet();
+                } catch(IllegalArgumentException e){
+                    if (e.getMessage().contains("재고")) { // 메시지에 '재고'가 포함된 경우만 카운트
+                        outOfStockCount.incrementAndGet();
+                    } else {
+                        log.error("기타 예외: {}", e.getMessage());
+                    }
+                    outOfStockCount.incrementAndGet();
                 } catch (Exception e) {
                     // 낙관적 락 충돌하면 여기서 예외 발생
                     log.error("주문 실패: {}", e.getMessage());
@@ -157,8 +173,13 @@ public class OrderServiceTest {
         // 전체 주문 개수 확인
         long orderCount = orderRepository.count();
 
-        log.info("상품 재고: {}", updatedProduct.getStockQuantity());
-        log.info("성공한 주문 개수: {}", orderCount);
+        log.info("======= 통계 확인 ========");
+        log.info("최종 재고: {}", updatedProduct.getStockQuantity());
+        log.info("주문 성공 횟수: {}", successCount.get());
+        log.info("주문 내역 개수: {}", orderCount);
+        log.info("재고 부족 실패 횟수: {}", outOfStockCount.get());
+        log.info("최종 버전(버전 번호가 곧 충돌 횟수와 비례): {}", updatedProduct.getVersion());
+        log.info("데드락 확인: {}", deadlockCount.get());
 
         // 상품 재고는 1개 -> 0개
         assertThat(updatedProduct.getStockQuantity()).isEqualTo(0);
